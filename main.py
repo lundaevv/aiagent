@@ -1,6 +1,8 @@
-import os, argparse
+import os, argparse, json
 from dotenv import load_dotenv
 from openai import OpenAI
+from prompts import system_prompt
+from call_function import available_functions, call_function
 
 def load_api_key() -> str | None:
     load_dotenv()
@@ -25,6 +27,7 @@ def generate_content(client, messages, args):
     response = client.chat.completions.create(
         model="openrouter/free",
         messages=messages,
+        tools=available_functions,
     )
 
     user_prompt = args.user_prompt
@@ -36,8 +39,18 @@ def generate_content(client, messages, args):
         print(f"User prompt: {user_prompt}")
         print(f"Prompt tokens: {response.usage.prompt_tokens}")
         print(f"Response tokens: {response.usage.completion_tokens}")        
-    
-    return response.choices[0].message.content
+
+    message = response.choices[0].message
+    if message.tool_calls:
+        for tool_call in message.tool_calls:
+            function_args = json.loads(tool_call.function.arguments or "{}")
+            result_message = call_function(tool_call, args.verbose)
+            if not result_message["content"]:
+                raise Exception("Error: return tool message is empty")
+            if args.verbose:
+                print(f"-> {result_message['content']}")
+    else:
+        print(response.choices[0].message.content)
 
 def main():
     api_key = load_api_key()
@@ -48,11 +61,11 @@ def main():
     client = build_client(api_key)
 
     messages: list[dict[str, object]] = [
-    {"role": "user", "content": args.user_prompt},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": args.user_prompt},
     ]
 
-    content = generate_content(client, messages, args)
-    print(content)
+    generate_content(client, messages, args)
 
 if __name__ == "__main__":
     main()
