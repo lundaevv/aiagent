@@ -41,16 +41,18 @@ def generate_content(client, messages, args):
         print(f"Response tokens: {response.usage.completion_tokens}")        
 
     message = response.choices[0].message
+    messages.append(message)
     if message.tool_calls:
         for tool_call in message.tool_calls:
-            function_args = json.loads(tool_call.function.arguments or "{}")
             result_message = call_function(tool_call, args.verbose)
             if not result_message["content"]:
                 raise Exception("Error: return tool message is empty")
             if args.verbose:
                 print(f"-> {result_message['content']}")
+            messages.append(result_message)
     else:
         print(response.choices[0].message.content)
+        return True
 
 def main():
     api_key = load_api_key()
@@ -64,8 +66,13 @@ def main():
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": args.user_prompt},
     ]
-
-    generate_content(client, messages, args)
+    for _ in range(20):
+        if generate_content(client, messages, args):
+            break
+    else:
+        print("Error: the max number of iterations is reached and the model hasn't produced a final response :()")
+        exit(1)
+        
 
 if __name__ == "__main__":
     main()
